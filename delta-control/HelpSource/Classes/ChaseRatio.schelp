@@ -1,0 +1,86 @@
+class:: ChaseRatio
+summary:: Multiplies or divides an input value with a ratio scaled by the time interval between successive instance mathod calls: if the current input value is greater than the previous, it will be multiplied with the time-scaled ratio, if it is lesser, it will be divided.
+
+related:: Classes/ChaseValue,Classes/DeltaThresh, Classes/DeltaList
+categories:: delta-control
+
+Description::
+
+The class was designed with the intention of being used with MIDI continuous controllers, mapping control values with time intervals, to incorporate velocity (as speed of movement) in performance with knobs or faders. A user-specified ratio is 'chased' through controller movement: the faster you turn a knob the closer you will get to the ratio. If the current input value is greater than the previous, it will be multiplied with the ratio, if it is lesser, it will be divided. The instance method .chase is used to determine if the current controller value is greater or lesser than the previous, and what the time interval is between the current and previous method calls. The time interval is scaled to a proportion of the user-set ratio, which is multiplied or divided with the previous output value to generate a current output value.
+
+For more details see: Nyström, E. (2020) 'Intra-action: Experiments with Velocity and Position in Continuous Controllers', Proceedings of NIME 2020, Royal Birmingham Conservatoire, UK.
+
+classmethods::
+
+method::new
+
+argument::ratio
+The maximum ratio that can be obtained. If the ratio is 1.1, then minDelta will result in 1.1 and maxDelta will result in 1.0.
+argument::minDelta
+The minimum time interval to be registered when the method .chase is called.
+argument::maxDelta
+The maximum time interval to be registered when the method .chase is called.
+argument::minOut
+A minimum output value to be used as reference for mapping. The default output value is 1, as the 'neutral' ratio, so the target mapping range is most likely going to be below and above 1. For MIDI an obvious choice would be to have the minOut - maxOut range be 0-127, although it could be anything as long as this range is observed when scaling to the target parameter range.
+argument::maxOut
+A maximum output value.
+argument::boundary
+A symbol indicating  how the value range is to be limited. The permitted symbols are \clip, \fold, and \wrap. This affects what happens when the controller output reaches minimum and maximum and can have interesting effects.
+
+instancemethods::
+
+method:: chase
+argument:: inVal
+The control input value, e.g. a MIDI cc value of 0-127. Note that this class only uses the input mapping value as a reference to compare with the previous input.
+argument::curve
+A negative or positive value determining the curvature of scaling of deltas.
+
+returns:: a new value value where delta has been scaled and multiplied with the previous value.
+discussion::
+code::
+
+//connect a MIDI controller
+(
+MIDIClient.init;
+MIDIIn.connectAll;
+MIDIClient.destinations;
+)
+
+//this synth has a triggered envelope so that each controller movement can trigger a sound
+(
+x=SynthDef(\trigsine, {|freq=200,attack=0.01, release=0.01, t_trig=0|
+	var sin=SinOsc.ar(freq) * Env.perc(attackTime:attack,releaseTime:release).kr(gate:t_trig);
+	Out.ar(0, sin!2 * 0.2)
+}).play;
+)
+//a mapping with two ChaseRatio on the same controller creating a dual response.
+//you will need to keep turning your knob in order for the frequency to build up
+//the speed at which you play will determine entirely the combinations of frequency and duration in the resulting sounds
+//negative curvatures makes the response require faster action in order for values to build up.
+//higher ratio will mean more possible difference between control value and thus faster build-up
+//explore changing curve, ratio, minOut and maxOut for different action responses
+(
+var ccNum=0, chan=0, ratio1=1.2,ratio2=1.3, curve1=8.neg, curve2=16.neg;
+var chaseRat1=ChaseRatio.new(ratio: ratio1, minDelta: 0.001, maxDelta: 1.0, minOut:0, maxOut:127,boundary:\fold);//instantiate a ChaseRatio
+var chaseRat2=ChaseRatio.new(ratio: ratio2, minDelta: 0.001, maxDelta: 1.0, minOut:0, maxOut:127,boundary:\clip);//another one with higher ratio
+
+MIDIFunc.cc(func: { | ccVal |
+	var ccChased1=chaseRat1.chase(ccVal, curve1); //scale the cc value with .chase; try different negative or positive curve values to adjust the action
+	var ccChased2=chaseRat2.chase(ccVal, curve2);//this one has a slower curve but a higher ratio, so it's response will not be linearly related to chaseRat1
+	var freq=ccChased1.linexp(0, 127, 200, 12000);//map the output to parameter. This scaling has to be consistent with minOut and maxOut
+	var attack=ccChased2.linexp(0,127,0.1,0.001);
+	var release=ccChased2.linexp(0,127,0.5,0.001);
+
+	"ccVal: % ".postf(ccVal); "ccChased1: % ".postf(ccChased1); "ccChased2: % ".postf(ccChased2); "freq: %".postf(freq);"attack: %".postf(attack); \.postln;//watch the posts to see how the responses vary
+
+	x.set(\freq, freq,\attack, attack, \release, release, \t_trig,1);
+
+}, ccNum: ccNum, chan: chan);
+
+)
+
+x.free
+
+::
+
+

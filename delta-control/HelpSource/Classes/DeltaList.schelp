@@ -1,0 +1,216 @@
+class:: DeltaList
+summary:: Records a time interval and adds it to a list.
+
+related:: Classes/ChaseValue,Classes/ChaseRatio, Classes/DeltaThresh
+categories:: delta-control
+
+Description::
+
+This class was built for storing time data in live performance and algorithmic composition. Every time the instance method .addDelta is executed the time delta that has passed from the previous call of the same method is recorded and added to a list. The list has a maximum size specified and will wrap or shift its data when the max size is reached, thus always providing the most recent collection of time data. There are also instance methods which allow for inserting deltas into the list in various ways, assuming that a process is iterating of the list of deltas.
+
+For more context see: Nyström, E. (2020) 'Intra-action: Experiments with Velocity and Position in Continuous Controllers', Proceedings of NIME 2020, Royal Birmingham Conservatoire, UK.
+
+classmethods::
+
+method::new
+
+argument:: maxSize
+The maximum size of the list beyond which it will shift or wrap its data.
+argument::minDelta
+The minimum time interval to be registered when the methods .funkAddFast, .funkAddSlow, or .funkExc, are called.
+argument::maxDelta
+The minimum time interval to be registered when the methods .funkAddFast, .funkAddSlow, or .funkExc, are called.
+argument::ifFull
+The symbol \shift or \wrap should be entered here to determine how a full list deals with new data, adding it to the end (\shift) or to the beginning (\wrap)
+
+instancemethods::
+
+method:: addDelta
+returns::adds a new delta and returns current list of deltas
+discussion::
+code::
+
+d=DeltaList(maxSize:10,minDelta:0.01,maxDelta:1.0,ifFull:\shift);//an instance of DeltaList
+d.addDelta; //add deltas by calling the .addDelta method
+d.deltaList; //get the list without adding a delta;
+
+(
+var deltaList;
+deltaList=DeltaList(maxSize:10,minDelta:0.01,maxDelta:1.0,ifFull:\shift);//an instance of DeltaList
+n={ a.addDelta;{WhiteNoise.ar*Env.perc(0.01,0.2).kr(doneAction: 2);}.play;};//play a noise and add a delta
+// a task for playing back
+t=Task({
+	inf.do {|i|
+	{	WhiteNoise.ar*Env.perc(0.01,0.2).kr(doneAction: 2);}.play;
+	a.deltaList.wrapAt(i).wait;
+	}
+});
+);
+n.(); // run this to create a pattern
+t.play;//play the sequence. If you run n again it will add another delta to the end of the list that is being iterated over in the task
+
+::
+
+method:: insertSplit
+This assumes that some form of process is iterating over the list of deltas. The method will clock a new delta in relation to an event that has just taken place, and it into the list, splitting the delta that is at the given index in two.
+argument:: index
+The index in the list to insert a new delta.
+argument:: timeAtIndex
+This needs to be a Main.elapsedTime value correponding to the moment when a 'current' index was iterated over by a process
+returns::the current deltaList with a split delta at the index specified
+discussion::
+code::
+
+(
+var playbackIndex,timeAtIndex;
+//a DeltaList
+d=DeltaList(maxSize:10,minDelta:0.001,maxDelta:2.0,ifFull:\shift);//an instance of DeltaList
+// a synth
+x={WhiteNoise.ar([0.2,0.2])*Env.perc(0.01,0.2).kr(doneAction: 2);};
+//play a noise and add a delta
+n={
+	x.play;
+	//if the task is playing add the delta at the playbackIndex, otherwise just tack it on at the end
+	if(t.isPlaying, { d.insertSplit(playbackIndex,timeAtIndex);d.deltaList}, {d.addDelta;});
+};
+// a task for playing back
+t=Task({
+	inf.do {|i|
+	//get the index of the place in the list from which the current delta is taken
+	playbackIndex=(i % d.deltaList.size).asInteger;
+	//clock the current time
+	timeAtIndex=Main.elapsedTime;
+	x.play;
+		//set the wait time
+	d.deltaList.wrapAt(i).wait;
+	}
+});
+);
+n.(); // run this repetedly to create a pattern
+t.play;//play the sequence.NB there has to be at least 1 delta in the list!
+//If you run n again it will add another delta at the  point in the list where the task is currently
+n.();
+//inevitably the deltas in the pattern get shorter
+t.stop;
+
+::
+
+method:: replaceAdd
+Used similarly as insertsplit but adds the delta at the given index to the new one.
+argument:: index
+The index in the list to insert a new delta.
+argument:: timeAtIndex
+This needs to be a Main.elapsedTime value correponding to the moment when a 'current' index was iterated over by a process
+returns::the current deltaList with a split delta at the index specified
+discussion::
+code::
+
+(
+var playbackIndex,timeAtIndex;
+//a DeltaList
+d=DeltaList(maxSize:10,minDelta:0.001,maxDelta:2.0,ifFull:\shift);//an instance of DeltaList
+// a synth
+x={WhiteNoise.ar([0.2,0.2])*Env.perc(0.01,0.2).kr(doneAction: 2);};
+//play a noise and add a delta
+n={
+	x.play;
+	//if the task is playing add the delta at the playbackIndex, otherwise just tack it on at the end
+	if(t.isPlaying, { d.replaceAdd(playbackIndex,timeAtIndex);d.deltaList}, {d.addDelta;});
+};
+// a task for playing back
+t=Task({
+	inf.do {|i|
+	//get the index of the place in the list from which the current delta is taken
+	playbackIndex=(i % d.deltaList.size).asInteger;
+	//clock the current time
+	timeAtIndex=Main.elapsedTime;
+	x.play;
+	d.deltaList.wrapAt(i).wait;
+	}
+});
+);
+n.(); // run this repetedly to create a pattern
+t.play;//play the sequence.NB there has to be at least 1 delta in the list!
+//If you run n again it will add another delta at the  point in the list where the task is currently
+n.();
+t.stop;
+//inevitably the deltas in the pattern gets longer and longer.
+
+//so this version has a random selector of methods so that the pattern can vary in time growth
+(
+var playbackIndex,timeAtIndex;
+//a DeltaList
+d=DeltaList(maxSize:10,minDelta:0.001,maxDelta:2.0,ifFull:\shift);//an instance of DeltaList
+// a synth
+x={WhiteNoise.ar([0.2,0.2])*Env.perc(0.01,0.2).kr(doneAction: 2);};
+//play a noise and add a delta
+n={
+	x.play;
+	//if the task is playing add the delta at the playbackIndex, otherwise just tack it on at the end
+	if(t.isPlaying, {
+	//toss a coin to choose method
+		0.5.coin.if({d.replaceAdd(playbackIndex,timeAtIndex); "add".postln}, {d.insertSplit(playbackIndex,timeAtIndex);"split".postln});d.deltaList},
+	{d.addDelta;});
+};
+// a task for playing back
+t=Task({
+	inf.do {|i|
+	//get the index of the place in the list from which the current delta is taken
+	playbackIndex=(i % d.deltaList.size).asInteger;
+	//clock the current time
+	timeAtIndex=Main.elapsedTime;
+	x.play;
+	d.deltaList.wrapAt(i).wait;
+	}
+});
+);
+n.(); // run this repetedly to create a pattern
+t.play;//play the sequence.NB there has to be at least 1 delta in the list!
+//If you run n again it will add another delta at the  point in the list where the task is currently
+n.();
+t.stop;
+
+::
+
+method:: replace
+Used similarly as insertsplit but replaces the delta at the given index twith a new one.
+argument:: index
+The index in the list to insert a new delta.
+argument:: timeAtIndex
+This needs to be a Main.elapsedTime value correponding to the moment when a 'current' index was iterated over by a process
+returns::the current deltaList with a split delta at the index specified
+discussion::
+code::
+
+(
+var playbackIndex,timeAtIndex;
+//a DeltaList
+d=DeltaList(maxSize:10,minDelta:0.001,maxDelta:2.0,ifFull:\shift);//an instance of DeltaList
+// a synth
+x={WhiteNoise.ar([0.2,0.2])*Env.perc(0.01,0.2).kr(doneAction: 2);};
+//play a noise and add a delta
+n={
+	x.play;
+	//if the task is playing add the delta at the playbackIndex, otherwise just tack it on at the end
+	if(t.isPlaying, { d.replace(playbackIndex,timeAtIndex);d.deltaList}, {d.addDelta;});
+};
+// a task for playing back
+t=Task({
+	inf.do {|i|
+	//get the index of the place in the list from which the current delta is taken
+	playbackIndex=(i % d.deltaList.size).asInteger;
+	//clock the current time
+	timeAtIndex=Main.elapsedTime;
+	x.play;
+	d.deltaList.wrapAt(i).wait;
+	}
+});
+);
+n.(); // run this repetedly to create a pattern
+t.play;//play the sequence.NB there has to be at least 1 delta in the list!
+//If you run n again it will add another delta at the  point in the list where the task is currently
+n.();
+t.stop;
+
+::
+

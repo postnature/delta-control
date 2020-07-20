@@ -1,0 +1,90 @@
+class:: ChaseValue
+summary:: Scales a time interval to a user-set value range, which is multiplied with an input value.
+
+related:: Classes/ChaseRatio,Classes/DeltaThresh, Classes/DeltaList
+categories:: delta-control
+
+Description::
+
+The class was designed with the intention of being used with MIDI continuous controllers, scaling control values with time intervals, to incorporate velocity (as speed of movement) in performance with knobs or faders. The MIDI CC value corresponding to a current controller position is 'chased' through controller movement: the faster you turn a knob the closer you will get to outputting the position value accurately. The instance method .chase is used to supply controller value and clock time deltas, returning a new value which is the product of time and position.
+
+For more details see: Nyström, E. (2020) 'Intra-action: Experiments with Velocity and Position in Continuous Controllers', Proceedings of NIME 2020, Royal Birmingham Conservatoire, UK.
+
+classmethods::
+
+method::new
+
+argument::minDelta
+The minimum time interval to register when the method .chase is called.
+argument::maxDelta
+The maximum time interval to register when the method .chase is called.
+argument::minMult
+The minimum number to be multiplied with the inVal supplied when the instance method .chase is called. This is scaled in relation to minDelta and maxDelta.
+argument::maxMult
+The maximum number to be multiplied with the inVal supplied when the instance method .chase is called. This is scaled in relation to minDelta and maxDelta.
+
+instancemethods::
+
+method:: chase
+argument:: inVal
+The control input value, e.g. a MIDI cc value of 0-127.
+argument::curve
+A negative or positive value determining the curvature of scaling of deltas.
+
+returns:: a new value value where delta has been scaled and multiplied with the inVal.
+discussion::
+code::
+
+
+// an instance of ChaseVal
+c=ChaseValue.new(minDelta: 0.001, maxDelta: 1.0, minMult:0, maxMult: 1)
+//basic demonstration of the .chase method call
+//evaluate this succcessively and see how the output changes: you are 'chasing' the inVal (10) through time
+c.chase(10,0)
+
+//connect a MIDI controller
+(
+MIDIClient.init;
+MIDIIn.connectAll;
+MIDIClient.destinations;
+)
+
+//a synth
+x={|freq=20,dist=0|SinOscFB.ar(freq, dist)}.play
+
+//mapping
+//the curve is set to -8 -- negative curvatures increase the time sensitivity and makes the response more jagged.
+(
+var ccNum=0, chan=0;
+var chaseVal=ChaseValue.new(minDelta: 0.001, maxDelta: 1.0, minMult:0, maxMult: 1);//instantiate a chaseVal
+
+MIDIFunc.cc(func: { | ccVal |
+	var ccChased=chaseVal.chase(ccVal, 8); //scale the cc value with .chase; try different negative or positive curve values to adjust the action
+	var freq=ccChased.linexp(0, 127, 20, 12000);
+	var dist=ccChased.linlin(0, 127, 2.0, 0.0);
+
+	"ccVal: % ".postf(ccVal); "ccChased: % ".postf(ccChased); "freq: %".postf(freq); \.postln;
+
+	x.set(\freq, freq, \dist, dist);
+
+}, ccNum: ccNum, chan: chan);
+
+)
+
+x.free
+
+::
+method::lastDelta
+
+returns:: the most recent time interval.
+
+discussion::
+code::
+
+c=ChaseValue.new(minDelta: 0.001, maxDelta: 1.0, minMult:0, maxMult: 1) // an instance of ChaseVal
+c.chase(10,0) //chase the value 10
+c.lastDelta // the most recent delta
+
+::
+
+

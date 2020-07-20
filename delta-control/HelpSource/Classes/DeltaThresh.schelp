@@ -1,0 +1,203 @@
+class:: DeltaThresh
+summary:: Executes different user-specified mapping functions above and below a user-specified time-interval threshold.
+
+related:: Classes/ChaseValue,Classes/ChaseRatio, Classes/StoreDeltas, Classes/StoreDeltas2
+categories:: delta-control
+
+Description::
+
+The class was designed with the intention of being used with MIDI continuous controllers, mapping control values with time intervals, to incorporate velocity (as speed of movement) in performance with knobs or faders. Two mapping functions is specified upon instantiation of the class and a time delta threshold determines which of the mappings to apply. The idea with this was to create an audible change in sound output beyond a threshold of physical acitivity.
+
+For more details see: Nyström, E. (2020) 'Intra-action: Experiments with Velocity and Position in Continuous Controllers', Proceedings of NIME 2020, Royal Birmingham Conservatoire, UK.
+
+classmethods::
+
+method::new
+
+argument::minDelta
+The minimum time interval to be registered when the methods .funkAddFast, .funkAddSlow, or .funkExc, are called.
+argument::maxDelta
+The minimum time interval to be registered when the methods .funkAddFast, .funkAddSlow, or .funkExc, are called.
+argument::threshold
+The delta threshold that determines which function to execute. Anything below the threshold will execute the fastFunc, and anything above the threshold, the slowFunc.
+argument::slowFunc
+A function which will be executed when the current time interval is above the threshold (a duration longer than the threshold, thus slow). The function is passed the time delta (velocity), and a controller value, e.g. a CC value.
+argument::fastFunc
+Same as slowFunc but executed below the threshold. This is thus the function that applies to the mapping for faster controller activity.
+
+instancemethods::
+
+method:: funkExc
+argument:: val
+The control input value, e.g. a MIDI cc value of 0-127.
+
+returns:: executes slowFunc always, but adds fastFunc if it is below the threshold.
+discussion::
+code::
+
+//connect a MIDI controller
+(
+MIDIClient.init;
+MIDIIn.connectAll;
+MIDIClient.destinations;
+)
+
+//this synth can select between sine and sawtooth oscillators
+(
+x=SynthDef(\sawsin, {|freq=20, pw=0.5,oscSel=0,lagTime=0.1 |
+	var f=Lag.kr(freq,lagTime);
+	var oscs=[VarSaw.ar(f, width:Lag.kr(pw,lagTime)),SinOsc.ar(f)];
+	var select=SelectX.ar(Lag.kr(oscSel,lagTime), oscs);
+	Out.ar(0, select!2);
+}).play;
+)
+// mapping using DeltaThresh.
+// For slow movement cc value controls frequency for a sawtooth timbre.
+// For fast movement velocity (delta) controls freqency  for a sine timbre.
+// velocity controls lag time and pulsewidth.
+(
+var threshold=0.01;//delta threshold
+var thresholdfuncs=DeltaThresh.new(minDelta:0.001,maxDelta:1.0,threshold:threshold,
+	slowFunc: { | vel, val |
+	var freq=val.linexp(0,127,10,500);//midi value mapped to frequency
+	var pw=vel.linlin(threshold,1.0,1.0,0.5);//velocity mapped to pulsewidth
+	var lagTime=vel.linlin(threshold,1.0,0.1,0.05);//velocity mapped to lag time, so that faster movement has faster lags.
+	x.set(\freq,freq,\pw,pw,\oscSel,0,\lagTime,lagTime);// osc sel 0 for sawtooth
+	},
+	fastFunc: { | vel, val |
+	var freq=vel.linexp(0.001,threshold,16000,2000);//velocity mapped to frequency. Reversed mapping so that fast movement gives high frequency.
+	var lagTime=vel.linlin(0.001,threshold,0.01,0.03);
+	x.set(\freq,freq,\oscSel,1,\lagTime,lagTime);//no pulsewidth for sine.
+});
+
+//the mapping is executed via the method .funkExc which means that either fastFunc or slowFunc but never both will be evaluated.
+MIDIFunc.cc(func:{|val|
+thresholdfuncs.funkExc(val);
+},ccNum:0,chan:0)
+)
+
+::
+
+method:: funkAddFast
+argument:: val
+The control input value, e.g. a MIDI cc value of 0-127. Note that this class only uses the input mapping value as a reference to compare with the previous input.
+
+returns:: executes slowFunc always, but adds fastFunc if delta is below the threshold.
+discussion::
+code::
+
+//connect a MIDI controller
+(
+MIDIClient.init;
+MIDIIn.connectAll;
+MIDIClient.destinations;
+)
+
+
+(
+
+x=SynthDef(\sin, {|freq=20, lagTime=0.1 |
+	var osc=SinOsc.ar(Lag.kr(freq,lagTime));
+	Out.ar(0, osc!2*0.2);
+}).play;
+//same as above but with a triggered envelope
+y=SynthDef(\sin2, {|freq=20, sus,lagTime=0.1, t_trig=0 |
+	var osc=SinOsc.ar(Lag.kr(freq,lagTime))*Env.linen(attackTime:0.01,sustainTime:sus,releaseTime:0.01).kr(gate: t_trig);
+	Out.ar(0, osc!2*0.2);
+}).play;
+)
+
+
+
+// when playing fast you get an added harmonic
+(
+var threshold=0.01;//delta threshold
+var thresholdfuncs=DeltaThresh.new(minDelta:0.001,maxDelta:0.5,threshold:threshold,
+	slowFunc: { | vel, val |
+	var freqmul=val.linexp(0,127,0.1,10.0);//midi val mapped to a multiplier for frequency
+	var velfreq=vel.lincurve(0.001,0.5,2000,1,-16);//velocity mapped to frequency
+	var freq=(velfreq*freqmul).fold(2,10000);//combine the above and fold edges for added wierdness
+	var lagTime=vel.linlin(0.001,0.5,0.05,0.3);//velocity mapped to lag time, so that faster movement has shorter lags.
+	freq.postln;
+	vel.postln;
+	x.set(\freq,freq,\modmul,0,\lagTime,lagTime);// osc sel 0 for sawtooth
+	},
+	fastFunc: { | vel, val |
+	var freqmul=val.linexp(0,127,0.1,10.0);
+	var velfreq=vel.lincurve(0.001,0.5,2000,1,-16);
+	var freq=(velfreq*freqmul).fold(2,10000)*2;//multiply by 2 to get an harmonic
+	var lagTime=vel.linlin(0.001,0.5,0.05,0.3);//velocity mapped to lag time, so that faster movement has faster lags.
+	y.set(\freq,freq,\sus,lagTime,\lagTime,lagTime,\t_trig,1);
+	});
+
+//the mapping is executed via the method .funkAddFast which means that slow func will always be evaluated, but fastFunc will also be evaluated when delta is below threshold
+
+MIDIFunc.cc(func:{|val|
+thresholdfuncs.funkAddFast(val);
+},ccNum:0,chan:0);
+
+)
+
+::
+method:: funkAddSlow
+argument:: val
+The control input value, e.g. a MIDI cc value of 0-127.
+
+returns::executes fastFunc always, but adds slowFunc delta is above the threshold.
+discussion::
+code::
+
+//connect a MIDI controller
+(
+MIDIClient.init;
+MIDIIn.connectAll;
+MIDIClient.destinations;
+)
+
+//two synths
+(
+x=SynthDef(\sinfb, {|freq=20, fb=0.5,lagTime=0.1 |
+	var osc=SinOscFB.ar(Lag.kr(freq,lagTime),Lag.kr(fb,lagTime));
+	Out.ar(0, osc!2*0.2);
+}).play;
+//this one only sounds when triggered (t_trig=1)
+y=SynthDef(\gendy, {|minfreq=1, maxfreq=1000,sus=0.05, t_trig=0 |
+
+	var osc=Gendy2.ar(ampdist:1,durdist:1,adparam:1,ddparam:0.9,minfreq:minfreq,maxfreq:maxfreq,ampscale:1,durscale:1,initCPs:12,knum:10,a:0.5,c:0.6,mul:1)*Env.linen(attackTime:0.01,sustainTime:sus,releaseTime:0.01).kr(gate:t_trig).tanh;
+	Out.ar(0, osc!2);
+}).play;
+)
+
+// mapping using DeltaThresh so that you need to play fast in order to get a clean tone
+// For slow movement the GENDYN oscillator is added, creating a 'crashing' effect
+// Slow movement also creates more distortion on the SinOscFB
+(
+var threshold=0.1;//delta threshold
+var thresholdfuncs=DeltaThresh.new(minDelta:0.001,maxDelta:0.5,threshold:threshold,
+	slowFunc: { | vel, val |
+
+	var minfreq=vel.linexp(threshold,0.5,1000,0.1);
+	var maxfreq=vel.linexp(threshold,0.5,3000,500);
+	var sustain=vel;
+	y.set(\minfreq, minfreq,\maxfreq,maxfreq,\sus,sustain,\t_trig,1);
+	},
+	fastFunc: { | vel, val |
+		var freqmul=val.linexp(0,127,0.1,10.0);//midi val mapped to a multiplier for frequency
+	var velfreq=vel.lincurve(0.001,0.5,5000,1,-16);//velocity mapped to frequency
+	var freq=(velfreq*freqmul).fold(2,15000);//combine the above and fold edges for added wierdness
+	var fb=vel.linlin(0.001,0.5,0.01,20);//velocity mapped to feedback
+	var lagTime=vel.linlin(0.001,0.5,0.05,0.3);//velocity mapped to lag time, so that faster movement has shorter lags.
+		freq.postln;
+		vel.postln;
+	x.set(\freq,freq,\fb,fb,\lagTime,lagTime);// osc sel 0 for sawtooth
+});
+
+//the mapping is executed via the method .funkAddSlow which means that fast func will always be evaluated, but slowFunc will also be evaluated when when delta is above threshold
+
+MIDIFunc.cc(func:{|val|
+thresholdfuncs.funkAddSlow(val);
+},ccNum:0,chan:0);
+
+)
+
+::

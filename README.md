@@ -1,5 +1,7 @@
 # delta-control
 
+These classes were presented as part of a demo at NIME 2020 at Royal Birmingham Conservatoire. The proceedings paper is included here.
+
 Installation
 
 1) download the delta-control folder
